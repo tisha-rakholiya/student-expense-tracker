@@ -1,149 +1,178 @@
-# Student Expense Tracker (MERN)
+# SpendWise: Student Expense Tracker
 
-A web app for students to track daily expenses, set a monthly budget and see where their money goes.
+Track where your pocket money goes, every month.
 
-**Tech stack**
+SpendWise is a full-stack **Single Page Application** for students. Record daily expenses, set a monthly budget, see spending by category, and get smart insights about your month. Built for the **JavaScript Framework (PBL) - C2620A3** course.
 
-| Part | Technology |
+**Stack:** React (Vite) + Redux Toolkit + React Router + Axios | Node.js + Express.js | Python FastAPI | MongoDB | JWT
+
+
+## Live demo
+
+| Part | Link |
 | --- | --- |
-| Frontend | React (Vite), Redux Toolkit, React Router, Axios, Recharts |
-| Backend | Node.js, Express.js (auth, expenses, budget) |
-| Analytics service | Python FastAPI (insights, CSV export) |
-| Database | MongoDB (Mongoose in Express, PyMongo in FastAPI) |
-| Security | JWT (shared by both backends), bcrypt |
+| Web app (React + Express) | https://student-expense-tracker-znf1.onrender.com |
+| Analytics API (FastAPI) | https://student-expense-tracker-api-lqll.onrender.com/health |
+
+> Both services run on Render's free plan, so they go to sleep when nobody uses them. The first request can take 30 to 50 seconds. Open both links once and wait before a demo.
+> The live database starts empty: click **Create an account** to register. (The demo account `demo@student.com` / `demo123` exists only after running `npm run seed` locally.)
 
 ## Features
 
-- **Register, log in and log out** (passwords hashed with bcrypt, login with JWT tokens)
-- Each student sees only their own expenses and budget
-- Add, edit and delete expenses (title, amount, category, payment method, date, note)
-- Monthly view with a month picker
-- Set a monthly budget, with a progress bar and an alert when it is crossed
-- Total spent, number of expenses and money left
-- Bar chart of spending by category (calculated with a MongoDB aggregation)
-- Search by title and filter by category
-- Form validation on both the frontend and the backend
-- **Single Page Application** with React Router pages: `/login`, `/dashboard`, `/insights` (protected pages redirect to `/login`)
-- **Redux Toolkit** store for login state (`auth`) and dashboard data (`expenses`)
-- **Insights page** powered by Python FastAPI: projected month-end spending, daily chart, top category, payment-mode split, budget tips
-- **Download CSV** of a month's expenses (FastAPI)
-- Works on mobile screens
+- **Secure accounts:** register, log in and log out. Passwords are hashed with bcrypt and sessions use JWT tokens.
+- **Private data:** every student sees only their own expenses and budget.
+- **Expenses:** add, edit and delete with title, amount, category (9 categories), payment method (Cash, UPI, Card), date and note.
+- **Monthly view:** month picker, search by title and filter by category.
+- **Monthly budget:** progress bar that turns orange at 80% and red at 100%, with a warning message.
+- **Live summary:** total spent, money left, daily average and number of expenses.
+- **Category chart:** donut chart of spending per category (MongoDB aggregation).
+- **Insights page (FastAPI):** projected month-end spending, daily spending chart, top category, biggest expense, payment-mode split and tips based on your budget pace.
+- **CSV export:** download a month's expenses as a CSV file (opens in Excel).
+- **Single Page App:** React Router pages `/login`, `/dashboard` and `/insights`. Protected pages redirect to `/login`.
+- **State management:** Redux Toolkit store for login state and dashboard data.
+- **Responsive:** works on phones and laptops.
+- **Validation:** form checks in React and schema checks in Mongoose and FastAPI.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | React (Vite), Redux Toolkit, React Router, Axios, Recharts |
+| Main backend | Node.js, Express.js (auth, expenses, budget) |
+| Analytics service | Python FastAPI, Pydantic, Uvicorn |
+| Database | MongoDB (Mongoose in Express, PyMongo in FastAPI) |
+| Security | JWT (shared by both backends), bcrypt |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["React app<br/>Redux + React Router + Axios<br/>(Vite, port 5173)"] -->|"/api"| B["Express.js<br/>auth, expenses, budget<br/>(port 5000)"]
+    A -->|"/analytics"| C["FastAPI<br/>insights, CSV export<br/>(port 8000)"]
+    B -->|Mongoose| D[("MongoDB<br/>users, expenses, budgets")]
+    C -->|PyMongo| D
+```
+
+The browser never talks to the database directly. React calls the two backends with Axios, and both backends read the same MongoDB database.
+
+### How JWT login works here
+
+1. The student logs in. Express checks the password with bcrypt and creates a JWT (`{ id }`, signed with `JWT_SECRET`, valid for 7 days).
+2. React (Redux `authSlice`) saves the token in `localStorage`.
+3. An Axios interceptor adds `Authorization: Bearer <token>` to every request, to Express and to FastAPI.
+4. Express (`requireAuth` middleware) and FastAPI (`current_user_id` dependency) verify the token with the **same `JWT_SECRET`** and read the user id from it.
+5. Every database query is limited to that user's id. A missing, wrong or expired token returns `401` and the app sends the user back to `/login`.
+
+### Database
+
+| Collection | Main fields |
+| --- | --- |
+| `users` | name, email (unique), password (bcrypt hash) |
+| `expenses` | user, title (max 60), amount (at least 1), category, paymentMethod, date, note (max 200) |
+| `budgets` | user, month (`YYYY-MM`), amount. Unique per user and month. |
 
 ## Folder structure
 
 ```
-expense-tracker/
-├── backend/
-│   ├── middleware/
-│   │   └── auth.js         # Checks the login token (JWT)
-│   ├── models/
-│   │   ├── User.js         # User schema (hashed password)
-│   │   ├── Expense.js      # Expense schema
-│   │   └── Budget.js       # Monthly budget schema
-│   ├── routes/
-│   │   ├── auth.js         # Register, login, me
-│   │   ├── expenses.js     # Expense CRUD + summary API
-│   │   └── budget.js       # Budget API
-│   ├── server.js           # Express server + MongoDB connection
-│   ├── seed.js             # Adds sample data
+student-expense-tracker/
+├── backend/                  # Node.js + Express API
+│   ├── middleware/auth.js    # createToken + requireAuth (JWT)
+│   ├── models/               # User.js, Expense.js, Budget.js
+│   ├── routes/               # auth.js, expenses.js, budget.js
+│   ├── server.js             # Express server + MongoDB connection
+│   ├── seed.js               # Demo user and sample expenses
 │   └── .env.example
-├── fastapi-service/        # Python FastAPI (insights + CSV export)
-│   ├── main.py             # Routes: /health, /analytics/insights, /analytics/export
-│   ├── auth.py             # Verifies the same JWT that Express creates
-│   ├── analytics.py        # MongoDB aggregations + tips
-│   ├── schemas.py          # Pydantic response models
+├── fastapi-service/          # Python FastAPI analytics service
+│   ├── main.py               # Routes: /health, /analytics/insights, /analytics/export
+│   ├── auth.py               # Verifies the JWT created by Express
+│   ├── analytics.py          # MongoDB aggregations and tips
+│   ├── schemas.py            # Pydantic response models
 │   ├── config.py, db.py
 │   ├── requirements.txt
 │   └── .env.example
-└── frontend/
+└── frontend/                 # React (Vite) app
     ├── src/
-    │   ├── components/
-    │   │   ├── AuthPage.jsx    # Login / register screen
-    │   │   ├── ProtectedRoute.jsx # Redirects to /login if not logged in
-    │   │   ├── Navbar.jsx      # Page links + log out
-    │   │   ├── Dashboard.jsx   # Main page after login
-    │   │   ├── Insights.jsx    # Insights page (data from FastAPI)
-    │   │   ├── ExpenseForm.jsx
-    │   │   ├── ExpenseList.jsx
-    │   │   ├── SummaryCards.jsx
-    │   │   └── CategoryChart.jsx
-    │   ├── store/
-    │   │   ├── index.js        # Redux store
-    │   │   ├── authSlice.js    # Login state + JWT token
-    │   │   └── expensesSlice.js # Month, filters, expenses, summary, budget
-    │   ├── api.js          # All calls to Express and FastAPI (Axios)
-    │   ├── utils.js        # Rupee/date formatting, colours
-    │   ├── App.jsx
-    │   └── index.css
-    └── vite.config.js      # Forwards /api to Express and /analytics to FastAPI
+    │   ├── components/       # AuthPage, ProtectedRoute, Navbar, Dashboard, Insights,
+    │   │                     # ExpenseForm, ExpenseList, SummaryCards, CategoryChart
+    │   ├── store/            # index.js, authSlice.js, expensesSlice.js (Redux Toolkit)
+    │   ├── api.js            # Axios clients for Express and FastAPI
+    │   ├── utils.js
+    │   ├── App.jsx           # React Router routes
+    │   └── main.jsx
+    └── vite.config.js        # Dev proxy: /api -> 5000, /analytics -> 8000
 ```
 
-## What you need to install (once)
+## Run locally
 
-1. **Node.js** (LTS version): https://nodejs.org
-2. **MongoDB Community Server**: https://www.mongodb.com/try/download/community
-   During install, keep **"Install MongoD as a Service"** ticked so it starts automatically.
-   Also tick **MongoDB Compass** to see your data visually.
-   (Or use a free **MongoDB Atlas** cloud database instead, see below.)
-3. **Python 3.10 or newer** (for the FastAPI service): https://www.python.org/downloads
+### What you need
 
-## How to run
+- [Node.js](https://nodejs.org) (LTS)
+- [Python 3.10 or newer](https://www.python.org/downloads)
+- MongoDB: [MongoDB Community Server](https://www.mongodb.com/try/download/community) on your laptop, or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
 
-Open **three terminals**.
+Open **three terminals** in the project folder.
 
-**Terminal 1: backend**
+**Terminal 1: Express backend**
 
-```
+```bash
 cd backend
 npm install
-copy .env.example .env      (on Mac/Linux: cp .env.example .env)
-npm run seed                (creates demo account demo@student.com / demo123 with sample expenses)
+copy .env.example .env      # Mac/Linux: cp .env.example .env
+npm run seed                # optional: demo@student.com / demo123 with sample expenses
 npm run dev
 ```
 
 You should see `Connected to MongoDB` and `Server running on http://localhost:5000`.
 
-**Terminal 2: FastAPI service (Python)**
+**Terminal 2: FastAPI service**
 
-```
+```bash
 cd fastapi-service
-python -m venv .venv
-.venv\Scripts\activate        (on Mac/Linux: source .venv/bin/activate)
+python -m venv venv
+venv\Scripts\activate       # Mac/Linux: source venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env         (on Mac/Linux: cp .env.example .env)
-uvicorn main:app --reload --port 8000
+copy .env.example .env      # Mac/Linux: cp .env.example .env
+python -m uvicorn main:app --reload --port 8000
 ```
 
-Open `fastapi-service/.env` and set `JWT_SECRET` to **exactly the same value as in `backend/.env`**. The FastAPI service verifies the login tokens that Express creates, so the secret must match.
-API docs (Swagger) are at http://localhost:8000/docs
+Open `fastapi-service/.env` and set `JWT_SECRET` to **exactly the same value** as in `backend/.env`. Check http://localhost:8000/health. API docs (Swagger) are at http://localhost:8000/docs.
 
-**Terminal 3: frontend**
+**Terminal 3: React frontend**
 
-```
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in your browser.
+Open http://localhost:5173. Restart this terminal if you change `vite.config.js`.
 
-## Using MongoDB Atlas instead of a local database
+### Environment variables
 
-1. Create a free cluster at https://www.mongodb.com/atlas
-2. Create a database user and allow your IP address (Network Access).
-3. Click **Connect → Drivers** and copy the connection string.
-4. In `backend/.env`, set `MONGO_URI=` to that string, with `/student_expense_tracker` before the `?`.
+| File | Variable | Meaning |
+| --- | --- | --- |
+| `backend/.env` | `PORT` | Server port (default 5000) |
+| | `MONGO_URI` | MongoDB connection string |
+| | `JWT_SECRET` | Secret used to sign login tokens |
+| `fastapi-service/.env` | `MONGO_URI` | Same database as Express |
+| | `JWT_SECRET` | **Must match** the value in `backend/.env` |
+| | `CORS_ORIGINS` | Frontend addresses allowed to call FastAPI (default `http://localhost:5173`) |
+| frontend (build time) | `VITE_ANALYTICS_URL` | FastAPI address, needed only for a production build |
+
+`.env` files are listed in `.gitignore` and are never pushed to GitHub.
 
 ## API endpoints
+
+### Express (port 5000)
 
 All `/api/expenses` and `/api/budget` routes need the header `Authorization: Bearer <token>`.
 
 | Method | Endpoint | What it does |
 | --- | --- | --- |
-| POST | `/api/auth/register` | Create an account `{ name, email, password }` → `{ token, user }` |
-| POST | `/api/auth/login` | Log in `{ email, password }` → `{ token, user }` |
+| POST | `/api/auth/register` | Create an account `{ name, email, password }` and get `{ token, user }` |
+| POST | `/api/auth/login` | Log in `{ email, password }` and get `{ token, user }` |
 | GET | `/api/auth/me` | The logged-in user |
-| GET | `/api/expenses?month=2026-10&category=Food&search=pizza` | List expenses (filters optional) |
+| GET | `/api/expenses?month=2026-10&category=Food&search=pizza` | List expenses (filters are optional) |
 | POST | `/api/expenses` | Add an expense |
 | PUT | `/api/expenses/:id` | Update an expense |
 | DELETE | `/api/expenses/:id` | Delete an expense |
@@ -153,7 +182,7 @@ All `/api/expenses` and `/api/budget` routes need the header `Authorization: Bea
 | PUT | `/api/budget/:month` | Set the budget for a month |
 | GET | `/api/health` | Server and database status |
 
-Example body for POST/PUT `/api/expenses`:
+Example body for `POST /api/expenses`:
 
 ```json
 {
@@ -166,9 +195,9 @@ Example body for POST/PUT `/api/expenses`:
 }
 ```
 
-## FastAPI endpoints (port 8000)
+### FastAPI (port 8000)
 
-Both routes need the header `Authorization: Bearer <token>` (the same token from `/api/auth/login`).
+The analytics routes need the same `Authorization: Bearer <token>` header.
 
 | Method | Endpoint | What it does |
 | --- | --- | --- |
@@ -176,27 +205,44 @@ Both routes need the header `Authorization: Bearer <token>` (the same token from
 | GET | `/analytics/insights?month=2026-10` | Total, daily average, projected month-end spending, top category, biggest expense, payment-mode split, daily totals, budget status and tips |
 | GET | `/analytics/export?month=2026-10` | Download the month's expenses as a CSV file |
 
-## How the pages and state work
+## Deploy on Render (free)
 
-- **React Router** (`App.jsx`): `/login` is public. `/dashboard` and `/insights` are wrapped in `ProtectedRoute`, which redirects to `/login` when there is no logged-in user.
-- **Redux Toolkit** (`src/store`): `authSlice` keeps the user and the JWT token (login, register, fetch current user, logout). `expensesSlice` keeps the selected month, filters, expenses, summary and budget, and has thunks that call the Express API with Axios.
-- **Axios** (`src/api.js`): one client for Express (`/api`) and one for FastAPI (`/analytics`). Both add `Authorization: Bearer <token>` automatically and log the user out on a 401 response.
+The app runs as **two Render web services** plus a free MongoDB Atlas database.
 
-## Run as one app (optional)
+1. **MongoDB Atlas:** create a free cluster and a database user (use a password with only letters and numbers). Under Network Access allow `0.0.0.0/0`. Copy the connection string and add `/student_expense_tracker` before the `?`.
+2. **FastAPI service** (New, Web Service, this repo):
+   - Root Directory: `fastapi-service`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - Environment: `MONGO_URI`, `JWT_SECRET`, `PYTHON_VERSION=3.12.8`, `CORS_ORIGINS=<address of the web app>`
+3. **Express + React service** (New, Web Service, this repo):
+   - Root Directory: leave empty
+   - Build Command: `cd frontend && npm install --include=dev && npm run build && cd ../backend && npm install`
+   - Start Command: `cd backend && npm start`
+   - Environment: `MONGO_URI`, `JWT_SECRET` (**the same value as the FastAPI service**), `VITE_ANALYTICS_URL=<address of the FastAPI service>`
+4. After changing `VITE_ANALYTICS_URL`, use **Clear build cache & deploy**, because the value is baked into the React build.
 
-```
-cd frontend
-npm run build
-cd ../backend
-npm start
-```
-
-Then open http://localhost:5000. The backend serves the built React app.
-The FastAPI service still runs separately on port 8000. Before `npm run build`, create `frontend/.env.production` with `VITE_ANALYTICS_URL=http://localhost:8000` so the built app can reach it (and add that address to `CORS_ORIGINS` in `fastapi-service/.env`).
+Express serves the built React app from `frontend/dist`, so the web app needs only one address.
 
 ## Common problems
 
-- **"Could not connect to MongoDB"**: MongoDB isn't running. On Windows, open **Services**, find **MongoDB Server**, click **Start**. Or check your Atlas connection string.
-- **"Could not reach the server"** in the app: the backend terminal isn't running. Start it with `npm run dev`.
-- **"is the FastAPI service running on port 8000?"** on the Insights page: start Terminal 2. If you get "Your session has expired" there, the `JWT_SECRET` in `fastapi-service/.env` does not match `backend/.env`.
-- **Port already in use**: close the other terminal running the app, or change `PORT` in `.env`.
+| Problem | Fix |
+| --- | --- |
+| `Could not connect to MongoDB` | Start MongoDB, or check `MONGO_URI`. On Atlas: allow your IP in Network Access and check the user and password (`bad auth` means a wrong username or password). |
+| `Could not reach the server` in the app | The Express terminal is not running. Start it with `npm run dev`. |
+| Insights page shows an error or loads forever | Start the FastAPI terminal. Check that `/analytics` is proxied (restart `npm run dev`) or that `VITE_ANALYTICS_URL` is set for a deployed build. |
+| Opening Insights sends you back to the login page | `JWT_SECRET` is different in Express and FastAPI. Make both the same, restart both and log in again. |
+| `Cannot GET /` on Render | The React app was not built. Use the Build Command from the deploy section. |
+| First page load is very slow on Render | The free plan was sleeping. Wait up to 50 seconds. |
+| Port already in use | Close the other terminal running the app, or change `PORT` in `.env`. |
+
+## Author
+
+**Tisha Rakholiya**
+JavaScript Framework (PBL) - C2620A3
+
+<!-- Tip: add screenshots here, for example:
+![Login](screenshots/login.png)
+![Dashboard](screenshots/dashboard.png)
+![Insights](screenshots/insights.png)
+-->
